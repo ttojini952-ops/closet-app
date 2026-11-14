@@ -1,5 +1,5 @@
 // 앱 화면만 저장해 두고(오프라인에서도 열림), 날씨·AI 요청은 항상 인터넷으로 보냄
-const CACHE = "closet-app-v5";
+const CACHE = "closet-app-v6";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", e => {

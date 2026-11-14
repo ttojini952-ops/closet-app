@@ -142,6 +142,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
     <div class="counts" id="headCounts"></div>
   </header>
 
+  <div class="banner hidden" id="artNote" style="font-size:13.5px">Claude 안 개발 버전입니다. 카메라 촬영·현재 위치 날씨·공식 이미지 찾기·입은 모습 이미지는 안드로이드 앱에서 동작하고, 여기서는 AI 비용이 들지 않습니다.</div>
   <div class="banner warn hidden" id="noDb">이 브라우저에서는 폰 저장소를 쓸 수 없습니다. 크롬에서 열어 주세요.</div>
   <button type="button" class="banner warn hidden" id="noAi" style="width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit">AI 기능을 쓰려면 Claude API 키가 필요합니다. → 내 정보 맨 아래 "AI 연결"에서 입력</button>
   <div class="status hidden" id="loadNote">옷장 데이터를 불러오는 중…</div>
@@ -184,11 +185,11 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
       <div class="shots">
         <div class="shot" id="shotMain">
           <div class="shotph" id="prevMain"><span>① 옷 전체</span></div>
-          <div class="shotbtns"><label class="btn small" for="mainCam">촬영</label><label class="btn ghost small" for="mainGal">앨범</label></div>
+          <div class="shotbtns"><label class="btn small camBtn" for="mainCam">촬영</label><label class="btn ghost small" for="mainGal">앨범</label></div>
         </div>
         <div class="shot" id="shotLabel">
           <div class="shotph" id="prevLabel"><span>② 라벨 (선택)</span></div>
-          <div class="shotbtns"><label class="btn small" for="labelCam">촬영</label><label class="btn ghost small" for="labelGal">앨범</label></div>
+          <div class="shotbtns"><label class="btn small camBtn" for="labelCam">촬영</label><label class="btn ghost small" for="labelGal">앨범</label></div>
         </div>
       </div>
       <input id="mainCam" type="file" accept="image/*" capture="environment" class="hidden">
@@ -266,7 +267,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
         <label class="f" for="sBody">체형에서 신경 쓰는 점<input id="sBody" placeholder="예: 어깨 넓음, 배가 나와 보이는 게 싫음"></label>
         <label class="f" for="sRegion">기본 지역 (위치를 못 잡을 때)<input id="sRegion" placeholder="서울"></label>
       </div>
-      <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:14px"><input type="checkbox" id="sGps" style="width:auto"> 현재 위치(GPS) 날씨 사용</label>
+      <label id="gpsRow" style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:14px"><input type="checkbox" id="sGps" style="width:auto"> 현재 위치(GPS) 날씨 사용</label>
     </div>
     <div class="card" style="margin-top:16px">
       <h2>선호 스타일</h2>
@@ -323,7 +324,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
     <div class="card" style="margin-top:16px">
       <h2>백업</h2>
       <p class="sub" style="margin:0 0 10px">옷장은 이 폰에만 저장됩니다. 앱 데이터를 지우거나 폰을 바꾸기 전에 백업 파일을 받아 두세요. (API 키는 백업에 넣지 않습니다)</p>
-      <div class="actions">
+      <div class="actions" id="backupActions">
         <button class="btn ghost" id="btnExport" type="button">백업 파일 받기</button>
         <label class="btn ghost" for="importIn" style="justify-content:center">백업 불러오기</label>
         <input id="importIn" type="file" accept="application/json,.json" class="hidden">
@@ -352,6 +353,9 @@ let sample=null, assets=null, imgLimits={maxCount:5};
 let coll=null, clothes=[], history=[], settings={...DEFAULTS};
 let aiCfg={key:"",model:"claude-sonnet-5-5"};
 let gemCfg={key:"",mode:"first"};
+const ART=!!(window.claude&&typeof window.claude.use==="function");
+let artSample=null, artMcp=null;
+function aiReady(){ return ART?!!artSample:!!aiCfg.key; }
 let catFilter="전체", selTpo=new Set(["출근(평상시)"]), styleSel=new Set(), styleDirty=false;
 let lastOutfits=null;
 
@@ -382,7 +386,8 @@ function errCopy(e){
 }
 function setBusy(btn,statusEl,on,msg){ btn.disabled=on; statusEl.innerHTML=on?`<span class="spin"></span> ${esc(msg)}`:esc(msg||""); }
 const photoURL=new Map();
-function imgSrc(id){ return (id&&photoURL.get(id))||""; }
+function imgSrc(id){ if(ART) return id?"/_blob/"+encodeURIComponent(id):""; return (id&&photoURL.get(id))||""; }
+async function getPhoto(id){ if(!id) return null; if(ART){ try{ const r=await fetch(imgSrc(id)); return r.ok?await r.blob():null; }catch(_){ return null; } } return idbGet("photos",id); }
 function useOfficial(it){ return !!(it&&it.officialImg&&it.showOfficial!==false&&!badImg.has(it.officialImg)); }
 const badImg=new Set();
 function phHTML(item){
@@ -453,7 +458,7 @@ $("#btnSaveStyle").onclick=async()=>{
   if(!coll){ $("#styleStatus").textContent="저장 기능이 연결되지 않아 이번 방문에만 적용됩니다."; styleDirty=false; return; }
   const btn=$("#btnSaveStyle"); setBusy(btn,$("#styleStatus"),true,"저장 중");
   const regionChanged=next.region!==prevRegion;
-  try{ await coll.doc("settings").set({kind:"settings",...next}); styleDirty=false; setBusy(btn,$("#styleStatus"),false,"저장했습니다."); if(regionChanged) wxInfo=null; }
+  try{ await coll.doc("settings").set({kind:"settings",...next}); styleDirty=false; setBusy(btn,$("#styleStatus"),false,"저장했습니다."); if(regionChanged){ wxInfo=null; loadWeather(true); } }
   catch(e){ setBusy(btn,$("#styleStatus"),false,e.code==="quota_exceeded"?"저장 공간이 가득 찼습니다.":"저장하지 못했습니다. 다시 눌러 주세요."); }
 };
 
@@ -506,7 +511,7 @@ async function handleFiles(files){
   const list=[...files].filter(f=>/^image\//.test(f.type));
   if(!list.length){ toast("이미지 파일을 골라 주세요. (아이폰 HEIC는 JPG로 바꿔 올려 주세요)"); return; }
   if(!coll){ toast("폰 저장소를 쓸 수 없습니다. 크롬에서 열어 주세요."); return; }
-  if(!aiCfg.key) toast("API 키가 없어 자동 분류 없이 저장합니다. 옷을 눌러 직접 고칠 수 있습니다.");
+  if(!aiReady()) toast("API 키가 없어 자동 분류 없이 저장합니다. 옷을 눌러 직접 고칠 수 있습니다.");
   const st=$("#uploadStatus"); const prepared=[];
   try{
     for(let i=0;i<list.length;i++){
@@ -522,7 +527,7 @@ async function handleFiles(files){
   for(let i=0;i<prepared.length;i+=(per||prepared.length)){
     const chunk=prepared.slice(i,i+(per||prepared.length));
     let results=[];
-    if(aiCfg.key&&per){
+    if(aiReady()&&per){
       st.innerHTML=`<span class="spin"></span> AI가 옷을 분류하는 중 ${Math.min(i+chunk.length,prepared.length)}/${prepared.length} (장당 몇 초~수십 초)`;
       try{ const r=await sample.json(classifyPrompt(chunk.length),{images:chunk.map(p=>p.blob),model:"claude-haiku-5-5"}); results=Array.isArray(r)?r:[r]; }
       catch(e){ failed+=chunk.length; const m=errCopy(e); if(m) toast(m+" 분류 안 된 옷은 눌러서 직접 고칠 수 있습니다."); }
@@ -556,6 +561,7 @@ function setShot(which,file){
 }
 [["mainCam","main"],["mainGal","main"],["labelCam","label"],["labelGal","label"]].forEach(([id,w])=>$("#"+id).addEventListener("change",e=>{ setShot(w,e.target.files[0]); e.target.value=""; }));
 function productPrompt(hasLabel){
+  if(ART) return `첫 번째 사진은 옷 전체${hasLabel?", 두 번째 사진은 그 옷의 라벨(택)":""}입니다. 웹 검색은 쓸 수 없으니 사진과 라벨에서 읽은 정보만 채우고, productUrl·officialImg는 빈 문자열로 두세요.\n`+productSchema();
   return `첫 번째 사진은 사용자가 가진 옷 전체 사진${hasLabel?", 두 번째 사진은 그 옷의 라벨(택)":""}입니다.
 ${hasLabel?`1) 라벨에서 브랜드, 품번(스타일 번호), 사이즈, 혼용률(소재 구성), 세탁 표시, 원산지를 읽으세요.
 2) 웹 검색으로 이 브랜드의 공식몰·무신사·29CM 등에서 같은 상품(품번 일치 우선, 없으면 브랜드+옷 모양·색이 같은 상품)을 찾으세요.
@@ -565,14 +571,16 @@ ${hasLabel?`1) 라벨에서 브랜드, 품번(스타일 번호), 사이즈, 혼�
 - officialImg에는 가장 대표적인 정면 상품 이미지 주소, officialImgs에는 다른 후보 이미지 주소를 최대 4개 넣으세요. 실제로 본 주소만 쓰고 지어내지 마세요. 없으면 빈 값.
 - productUrl도 실제로 확인한 상품 페이지 주소만. 확신이 없는 값은 빈 문자열.
 - matched는 같은 상품을 찾았는지: "exact"(품번 일치) | "similar"(비슷한 상품) | "none".
-다음 JSON 객체 하나로만 답하세요:
-{"matched":"exact|similar|none","brand":"브랜드","productName":"정식 상품명","productCode":"품번","size":"라벨 사이즈","composition":"혼용률 예: 울 70%, 나일론 30%","care":"세탁 방법 요약","price":"정가(원)","productUrl":"","officialImg":"","officialImgs":[],"name":"짧은 표시 이름(예: 네이비 울 싱글 코트)","category":"${CATS.join("|")} 중 하나","sub":"세부 종류","colors":["주된 색","보조 색"],"pattern":"무지|스트라이프|체크|프린트|기타","material":"주 소재","seasons":["봄","여름","가을","겨울" 중 해당],"warmth":1~5,"formality":1~5,"styles":["${STYLES.join('","')}" 중 1~3개],"memo":"코디 팁 한 줄"}`;
+${productSchema()}`;
 }
+function productSchema(){ return `다음 JSON 객체 하나로만 답하세요:
+{"matched":"exact|similar|none","brand":"브랜드","productName":"정식 상품명","productCode":"품번","size":"라벨 사이즈","composition":"혼용률 예: 울 70%, 나일론 30%","care":"세탁 방법 요약","price":"정가(원)","productUrl":"","officialImg":"","officialImgs":[],"name":"짧은 표시 이름(예: 네이비 울 싱글 코트)","category":"${CATS.join("|")} 중 하나","sub":"세부 종류","colors":["주된 색","보조 색"],"pattern":"무지|스트라이프|체크|프린트|기타","material":"주 소재","seasons":["봄","여름","가을","겨울" 중 해당],"warmth":1~5,"formality":1~5,"styles":["${STYLES.join('","')}" 중 1~3개],"memo":"코디 팁 한 줄"}`; }
 function imgCandidates(r){ const a=[]; [r&&r.officialImg,...((r&&Array.isArray(r.officialImgs))?r.officialImgs:[])].forEach(u=>{ u=String(u||"").trim(); if(/^https:\/\//.test(u)&&!a.includes(u)) a.push(u); }); return a.slice(0,6); }
 async function firstGoodImg(list){ for(const u of list){ if(await checkImg(u)) return u; } return ""; }
 async function findProduct(mainBlob,labelBlob,onStep){
   onStep&&onStep(labelBlob?"라벨을 읽고 상품을 찾는 중 (30초~1분)":"옷을 분석하는 중");
   const r=await callClaude(productPrompt(!!labelBlob),labelBlob?[mainBlob,labelBlob]:[mainBlob],4096,{search:true});
+  if(ART) return {r:r||{},official:"",note:"Claude 안 개발 버전이라 라벨 정보만 읽었습니다. 공식 이미지는 앱에서 찾습니다."};
   onStep&&onStep("상품 이미지 확인 중");
   let official=await firstGoodImg(imgCandidates(r));
   if(!official&&r&&/^https?:\/\//.test(r.productUrl||"")){
@@ -595,7 +603,7 @@ $("#btnRegister").onclick=async()=>{
     const mainBlob=await shrink(shotMain,1000), labelBlob=shotLabel?await shrink(shotLabel,1400):null;
     const up=await assets.upload(mainBlob), upL=labelBlob?await assets.upload(labelBlob):null;
     let r={}, official="", note="AI 연결이 없어 사진으로만 등록했습니다.";
-    if(aiCfg.key){
+    if(aiReady()){
       try{ ({r,official,note}=await findProduct(mainBlob,labelBlob,m=>setBusy(btn,st,true,m))); }
       catch(e){ note=errCopy(e)+" 사진으로만 등록했습니다."; }
     }
@@ -681,10 +689,10 @@ function openEdit(item){
   $("#eImg")&&$("#eImg").addEventListener("input",()=>{ const v=$("#eImg").value.trim(); $("#eShowOff").disabled=!/^https:\/\//.test(v); if(!$("#eShowOff").disabled) $("#eShowOff").checked=true; });
   if($("#eRefind")) $("#eRefind").onclick=async()=>{
     const b=$("#eRefind"), note=$("#eFindNote");
-    if(!aiCfg.key){ note.textContent=errCopy({code:"no_key"}); return; }
+    if(!aiReady()){ note.textContent=errCopy({code:"no_key"}); return; }
     b.disabled=true;
     try{
-      const mainBlob=await idbGet("photos",it.assetId), labelBlob=it.labelAssetId?await idbGet("photos",it.labelAssetId):null;
+      const mainBlob=await getPhoto(it.assetId), labelBlob=it.labelAssetId?await getPhoto(it.labelAssetId):null;
       const res=await findProduct(mainBlob,labelBlob,m=>{ note.innerHTML=`<span class="spin"></span> ${esc(m)}`; });
       const r=res.r;
       [["eBrand","brand"],["eCode","productCode"],["eSize","size"],["ePName","productName"],["eComp","composition"],["ePrice","price"],["eCare","care"],["eUrl","productUrl"]].forEach(([el,k])=>{ if(r[k]&&!$("#"+el).value.trim()) $("#"+el).value=String(r[k]); });
@@ -709,7 +717,7 @@ const SEOUL={lat:37.5665,lon:126.978,name:"서울"};
 const WMO={0:"맑음",1:"대체로 맑음",2:"구름 조금",3:"흐림",45:"안개",48:"안개",51:"약한 이슬비",53:"이슬비",55:"강한 이슬비",56:"어는 이슬비",57:"어는 이슬비",61:"약한 비",63:"비",65:"강한 비",66:"어는 비",67:"어는 비",71:"약한 눈",73:"눈",75:"많은 눈",77:"싸락눈",80:"소나기",81:"소나기",82:"강한 소나기",85:"눈 소나기",86:"강한 눈 소나기",95:"뇌우",96:"우박 동반 뇌우",99:"우박 동반 뇌우"};
 function wxSay(t){ $("#wxText").textContent=t; }
 function getPos(){ return new Promise(res=>{ if(!navigator.geolocation) return res(null);
-  navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lon:p.coords.longitude}),()=>res(null),{enableHighAccuracy:false,timeout:10000,maximumAge:900000}); }); }
+  navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lon:p.coords.longitude}),()=>res(null),{enableHighAccuracy:false,timeout:6000,maximumAge:1800000}); }); }
 async function getJSON(url){ const r=await fetch(url); if(!r.ok) throw new Error("http "+r.status); return r.json(); }
 async function placeName(lat,lon){
   try{ const j=await getJSON(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ko`);
@@ -719,16 +727,20 @@ async function geocode(name){
   try{ const j=await getJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=ko&format=json`);
     const r=j.results&&j.results[0]; return r?{lat:r.latitude,lon:r.longitude,name:r.name}:null; }catch(_){ return null; }
 }
-async function loadWeather(){
+async function loadWeatherApp(){
   const region=(settings.region||"서울").trim();
-  let loc=null, how="";
-  if(settings.useGps!==false){ wxSay("현재 위치 확인 중…"); const p=await getPos(); if(p){ loc={...p,name:await placeName(p.lat,p.lon)}; } else how="위치를 못 잡아 "; }
+  let loc=null, how="", nameP=null;
+  if(settings.useGps!==false){ wxSay("현재 위치 확인 중…"); const p=await getPos(); if(p){ loc={...p,name:"현재 위치"}; nameP=placeName(p.lat,p.lon); } else how="위치를 못 잡아 "; }
   if(!loc){ loc=/^(서울|서울시|서울특별시)$/.test(region)?SEOUL:(await geocode(region))||SEOUL; }
   wxSay(`${loc.name} 날씨 확인 중…`);
   try{
-    const w=await getJSON(`https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,snowfall_sum,wind_gusts_10m_max&timezone=Asia%2FSeoul&forecast_days=1`);
+    const [w,a,nm]=await Promise.all([
+      getJSON(`https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,snowfall_sum,wind_gusts_10m_max&timezone=Asia%2FSeoul&forecast_days=1`),
+      getJSON(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${loc.lat}&longitude=${loc.lon}&current=pm10,pm2_5&timezone=Asia%2FSeoul`).catch(()=>null),
+      nameP||Promise.resolve(loc.name)]);
+    loc.name=nm||loc.name;
     let aq="";
-    try{ const a=await getJSON(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${loc.lat}&longitude=${loc.lon}&current=pm10,pm2_5&timezone=Asia%2FSeoul`);
+    try{
       const pm10=a.current&&a.current.pm10, pm25=a.current&&a.current.pm2_5;
       if(pm10!=null||pm25!=null){ const g=(pm25>75||pm10>150)?"매우 나쁨":(pm25>35||pm10>80)?"나쁨":(pm25>15||pm10>30)?"보통":"좋음"; aq=`미세먼지 ${g}`; } }catch(_){}
     const c=w.current||{}, d=w.daily||{};
@@ -742,6 +754,37 @@ async function loadWeather(){
     wxInfo={place:loc.name,lo,hi,detail,short};
     wxSay(`${how}${loc.name} · 최저 ${lo}° / 최고 ${hi}° · ${detail}`);
   }catch(e){ wxInfo=null; wxSay(navigator.onLine===false?"인터넷이 연결되지 않아 계절 기준으로 추천합니다.":"날씨를 불러오지 못해 계절 기준으로 추천합니다."); }
+}
+
+async function loadWeatherArt(){
+  const region=(settings.region||"서울").trim();
+  if(!artMcp){ wxInfo=null; wxSay("이 화면에서는 날씨를 불러올 수 없어 계절 기준으로 추천합니다."); return; }
+  wxSay(`${region} 날씨 확인 중…`);
+  const call=async(tool,q)=>{ const r=await artMcp.callTool("AccuWeather",tool,{queryParams:q},{cache:{staleTime:1800000,gcTime:3600000}}); let p=r.payload; if(typeof p==="string"){ try{p=JSON.parse(p);}catch(_){} } return p; };
+  try{
+    let key="3430003", found=true;
+    if(!/^(서울|서울시|서울특별시|명동|중구|서울 중구)$/.test(region)){ const sr=await call("widgets-search-claude",{query:region}); const hit=sr&&Array.isArray(sr.results)&&sr.results[0]; if(hit&&hit.locationKey) key=String(hit.locationKey); else found=false; }
+    const q={locationKey:key,unit:"metric",lang:"ko"};
+    const [cur,daily]=await Promise.all([call("widgets-current-claude",q),call("widgets-daily-claude",q)]);
+    const cc=cur&&cur.currentConditions||{}; const days=daily&&Array.isArray(daily.dailyForecast)?daily.dailyForecast:[];
+    const d=days.find(x=>String(x.date||"").startsWith(todayKey))||days[0]||{}; const day=d.day||{}, night=d.night||{};
+    const temps=[cc.temperatureValue,day.temperature,night.temperature].map(Number).filter(Number.isFinite);
+    const hi=temps.length?Math.round(Math.max(...temps)):null, lo=temps.length?Math.round(Math.min(...temps)):null;
+    const rainP=Math.max(Number(day.rainProbabilityValue)||0,Number(night.rainProbabilityValue)||0);
+    const aq=cur&&cur.currentAirQuality&&cur.currentAirQuality.category||"";
+    const place=found?region:"서울";
+    const nowTxt=cc.temperatureValue!=null?`지금 ${Math.round(cc.temperatureValue)}°(체감 ${Math.round(cc.realFeelValue)}°) ${cc.phrase||""}`:"";
+    const detail=[nowTxt, day.longPhrase&&`낮 ${day.longPhrase}`, `강수확률 ${rainP}%`, aq&&`대기질 ${aq}`].filter(Boolean).join(", ");
+    wxInfo={place,lo,hi,detail,short:`${place} ${lo}°~${hi}° · ${day.iconPhrase||cc.phrase||""}${rainP>=40?" · 우산 챙기기":""}`};
+    wxSay(`${found?"":"'"+region+"'을 찾지 못해 서울 기준 · "}${place} · 최저 ${lo}° / 최고 ${hi}° · ${detail}`);
+  }catch(e){ wxInfo=null; const c=e&&e.code; wxSay(c==="server_not_connected"?"AccuWeather가 연결되어 있지 않아 계절 기준으로 추천합니다.":"날씨를 불러오지 못해 계절 기준으로 추천합니다."); }
+}
+let wxAt=0, wxP=null;
+function loadWeather(force){
+  if(!force&&wxInfo&&Date.now()-wxAt<1800000) return Promise.resolve();
+  if(wxP) return wxP;
+  wxP=(ART?loadWeatherArt():loadWeatherApp()).then(()=>{ if(wxInfo) wxAt=Date.now(); }).finally(()=>{ wxP=null; });
+  return wxP;
 }
 
 /* ---------- 코디 이미지 그리기 ---------- */
@@ -813,7 +856,7 @@ async function genTryOn(pieces){
   if(body){ parts.push({text:`이미지 ${n}: 옷을 입힐 사람(사용자 본인)의 전신 사진.`}); parts.push({inline_data:{mime_type:"image/jpeg",data:await blobToB64(await shrink(body,1024))}}); n++; }
   for(const p of pieces){
     let b=p.official?await fetchBlob(p.official):null;
-    if(!b&&p.assetId){ try{ b=await idbGet("photos",p.assetId); }catch(_){} }
+    if(!b&&p.assetId){ try{ b=await getPhoto(p.assetId); }catch(_){} }
     if(!b) continue;
     parts.push({text:`이미지 ${n}: ${p.slot} — ${p.name}`}); parts.push({inline_data:{mime_type:"image/jpeg",data:await blobToB64(await shrink(b,900))}}); lines.push(`${p.slot}: ${p.name} (이미지 ${n})`); n++;
   }
@@ -848,6 +891,7 @@ function gemErr(e){ const c=e&&e.code;
   if(c==="gem_model") return "Gemini 이미지 모델을 쓸 수 없는 키입니다.";
   return "입은 모습 이미지를 만들지 못했습니다."+(e&&e.message?` (${e.message.slice(0,80)})`:""); }
 function setupTryOn(box,pieces,title,auto){
+  if(ART){ box.innerHTML=auto?`<div class="sub">입은 모습 이미지는 안드로이드 앱 버전에서 만들어집니다.</div>`:""; return; }
   const run=()=>{ box.innerHTML=`<div class="lookph"><span class="spin"></span> 입은 모습 만드는 중 (10~40초)</div>`;
     tryQueue=tryQueue.then(async()=>{ try{ const url=await genTryOn(pieces);
         box.innerHTML=`<img class="look" alt="${esc(title)} 입은 모습" src="${url}"><div class="actions" style="margin-top:8px"><button class="btn ghost small" type="button" data-a="save">이미지 저장·공유</button><button class="btn ghost small" type="button" data-a="again">다시 만들기</button></div>`;
@@ -871,10 +915,11 @@ function recentText(){
 }
 $("#btnOutfit").onclick=async()=>{
   const btn=$("#btnOutfit"), st=$("#outfitStatus");
-  if(!aiCfg.key){ st.textContent=errCopy({code:"no_key"}); return; }
+  if(!aiReady()){ st.textContent=errCopy({code:"no_key"}); return; }
   if(!clothes.some(c=>c.assetId)){ st.textContent="내 옷 사진으로 코디를 보여 드리려면 먼저 '내 옷장'에 옷 사진을 등록해 주세요."; return; }
   setBusy(btn,st,true,"날씨 확인 중");
   await loadWeather();
+  setBusy(btn,st,true,"코디를 고르는 중");
   const buildPrompt=()=>`당신은 한국 직장인을 돕는 퍼스널 스타일리스트입니다. 사용자의 실제 옷장에 있는 옷을 우선 써서 오늘 입을 코디 3가지를 추천하세요.
 
 [오늘 조건]
@@ -902,21 +947,31 @@ ${wardrobeText()||"(등록된 옷 없음)"}
 - 코디는 이미지로 보여 주므로 why는 1~2문장으로 짧게.
 - 모든 문장은 존댓말로 짧게.
 
-다음 JSON 객체로만 답하세요:
-{"summary":"오늘 날씨·일정을 고려한 한 줄 요약","outfits":[{"title":"코디 이름(짧게)","concept":"무난|트렌드|편안","itemIds":["id"],"add":[{"slot":"아우터|상의|하의|원피스/셋업|신발|가방|액세서리","name":"아이템 이름","colorHex":"#RRGGBB"}],"why":"이 조합을 고른 이유 1~2문장","tip":"입는 법·소매·레이어드 팁 한 줄","lookKeyword":"이 코디와 비슷한 사진을 찾을 검색어(성별 포함, 색+아이템 2~3개+코디, 예: 남자 네이비 코트 베이지 니트 코디)"}],"missing":"오늘 같은 날 옷장에 있으면 좋을 아이템 한 줄, 없으면 빈 문자열"}`;
-  setBusy(btn,st,true,"코디를 고르는 중 (보통 10~40초)");
+빠르게 보여 줄 수 있도록, 한 줄에 JSON 객체 하나씩 아래 순서로만 출력하세요(코드블록·다른 글 금지, 줄바꿈으로 구분):
+{"type":"summary","summary":"오늘 날씨·일정을 고려한 한 줄 요약"}
+{"type":"outfit", ...아래 코디 객체 필드...}  ← 코디 3개, 각각 한 줄
+{"type":"missing","missing":"오늘 같은 날 옷장에 있으면 좋을 아이템 한 줄, 없으면 빈 문자열"}
+코디 객체 필드 예시: {"type":"outfit","title":"코디 이름(짧게)","concept":"무난|트렌드|편안","itemIds":["id"],"add":[{"slot":"아우터|상의|하의|원피스/셋업|신발|가방|액세서리","name":"아이템 이름","colorHex":"#RRGGBB"}],"why":"이 조합을 고른 이유 1~2문장","tip":"입는 법·소매·레이어드 팁 한 줄","lookKeyword":"이 코디와 비슷한 사진을 찾을 검색어(성별 포함, 색+아이템 2~3개+코디, 예: 남자 네이비 코트 베이지 니트 코디)"}`;
   try{
-    const r=await sample.json(buildPrompt(),{cache:false});
-    lastOutfits=r; renderOutfits(r); setBusy(btn,st,false,"");
+    beginOutfits(); let done=0, seen=0, sum=false;
+    const handle=line=>{ line=line.trim().replace(/^```(json)?/,""); if(!line||line[0]!=="{") return; let o; try{ o=JSON.parse(line); }catch(_){ return; }
+      if(o.type==="summary"&&!sum){ sum=true; addSummary(o.summary||""); }
+      else if(o.type==="outfit"){ addOutfit(o,done++); setBusy(btn,st,true,`코디 ${done}개 받음, 나머지 고르는 중`); }
+      else if(o.type==="missing"&&o.missing) addMissing(o.missing); };
+    const full=await streamClaude(buildPrompt(),text=>{ const ls=text.split("\n"); for(let i=seen;i<ls.length-1;i++) handle(ls[i]); seen=Math.max(seen,ls.length-1); },2500);
+    const ls=full.split("\n"); for(let i=seen;i<ls.length;i++) handle(ls[i]);
+    if(!done){ try{ const r=parseJSON(full); if(r&&Array.isArray(r.outfits)) renderOutfits(r); else throw 0; }catch(_){ throw {code:"invalid_json"}; } }
+    setBusy(btn,st,false,"");
   }catch(e){ setBusy(btn,st,false,errCopy(e)); }
 };
 function piecesHTML(ids){
   return (ids||[]).map(id=>clothes.find(c=>c.id===id)).filter(Boolean).map(c=>`<div class="piece"><div class="ph">${phHTML(c)}</div><div class="cap">${esc(c.name)}</div></div>`).join("");
 }
-function renderOutfits(r){
-  const el=$("#outfitResult"); el.innerHTML="";
-  if(r&&r.summary){ const s=document.createElement("div"); s.className="banner"; s.textContent=r.summary; el.appendChild(s); }
-  (r&&Array.isArray(r.outfits)?r.outfits:[]).forEach((o,idx)=>{
+function renderOutfits(r){ beginOutfits(); if(r&&r.summary) addSummary(r.summary); (r&&Array.isArray(r.outfits)?r.outfits:[]).forEach((o,idx)=>addOutfit(o,idx)); if(r&&r.missing) addMissing(r.missing); }
+function beginOutfits(){ $("#outfitResult").innerHTML=""; }
+function addSummary(t){ const s=document.createElement("div"); s.className="banner"; s.textContent=t; $("#outfitResult").appendChild(s); }
+function addOutfit(o,idx){ const el=$("#outfitResult");
+  {
     const ids=(o.itemIds||[]).map(String).filter(id=>clothes.some(c=>c.id===id));
     const pieces=piecesFrom(ids,o.add);
     const title=o.title||"코디 "+(idx+1);
@@ -942,8 +997,10 @@ function renderOutfits(r){
     el.appendChild(card);
     const sub=[`${now.getMonth()+1}/${now.getDate()} ${dow}`, wxInfo&&wxInfo.short, concept].filter(Boolean).join(" · ");
     if(pieces.length) fillLook(box,pieces,title,sub); else box.innerHTML=`<div class="status">이 코디에 맞는 옷이 옷장에 없습니다.</div>`;
-  });
-  if(r&&r.missing){ const m=document.createElement("div"); m.className="card"; m.innerHTML=`<h3 style="margin-bottom:6px">있으면 좋을 아이템</h3><p class="prose" style="margin:0">${esc(r.missing)}</p><div class="actions"><button class="btn ghost small" type="button">이걸로 쇼핑 추천받기</button></div>`;
+  }
+}
+function addMissing(missing){ const el=$("#outfitResult"); const r={missing};
+  { const m=document.createElement("div"); m.className="card"; m.innerHTML=`<h3 style="margin-bottom:6px">있으면 좋을 아이템</h3><p class="prose" style="margin:0">${esc(r.missing)}</p><div class="actions"><button class="btn ghost small" type="button">이걸로 쇼핑 추천받기</button></div>`;
     m.querySelector("button").onclick=()=>{ $("#shopWant").value=r.missing.slice(0,80); $("#tab-shop").click(); }; el.appendChild(m); }
 }
 async function wearOutfit(ids,title,btn,st){
@@ -970,7 +1027,7 @@ function shopLinks(k){
 }
 $("#btnShop").onclick=async()=>{
   const btn=$("#btnShop"), st=$("#shopStatus");
-  if(!aiCfg.key){ st.textContent=errCopy({code:"no_key"}); return; }
+  if(!aiReady()){ st.textContent=errCopy({code:"no_key"}); return; }
   const file=$("#shopFile").files[0];
   let images;
   if(file){
@@ -1089,6 +1146,8 @@ async function apiCall(body,beta){
   return j;
 }
 async function callClaude(prompt,images,maxTokens,opts){
+  if(ART){ if(!artSample) throw {code:"no_key"}; const quick=opts&&opts.model&&/haiku/.test(opts.model);
+    return artSample.json(prompt+"\n\n다른 설명 없이 JSON만 출력하세요.",{...(images&&images.length?{images}:{}),cache:false,...(quick?{modelTier:"quick"}:{})}); }
   if(!aiCfg.key) throw {code:"no_key"};
   const content=[];
   for(const im of images||[]) content.push({type:"image",source:{type:"base64",media_type:im.type&&/^image\/(jpeg|png|webp|gif)$/.test(im.type)?im.type:"image/jpeg",data:await blobToB64(im)}});
@@ -1119,9 +1178,24 @@ async function callClaude(prompt,images,maxTokens,opts){
   throw lastErr||{code:"upstream_error"};
 }
 sample={ json:(prompt,opts)=>callClaude(prompt,opts&&opts.images,opts&&opts.maxTokens,opts) };
+async function streamClaude(prompt,onText,maxTokens){
+  if(ART){ if(!artSample) throw {code:"no_key"}; const r=await artSample(prompt,{cache:false,onText:({text})=>onText(text)}); return r.text; }
+  if(!aiCfg.key) throw {code:"no_key"};
+  let r;
+  try{ r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":aiCfg.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:aiCfg.model||"claude-sonnet-5-5",max_tokens:maxTokens||3000,stream:true,messages:[{role:"user",content:prompt}]})}); }catch(_){ throw {code:"network"}; }
+  if(!r.ok){ let m=""; try{ m=((await r.json()).error||{}).message||""; }catch(_){} if(r.status===401||r.status===403) throw {code:"auth"}; if(/credit|balance|billing/i.test(m)) throw {code:"credit"}; if(r.status===429) throw {code:"rate_limited"}; if(r.status>=500) throw {code:"overloaded"}; throw {code:"upstream_error",message:m}; }
+  const reader=r.body.getReader(), dec=new TextDecoder(); let buf="", text="";
+  for(;;){ const {value,done}=await reader.read(); if(done) break; buf+=dec.decode(value,{stream:true});
+    let i; while((i=buf.indexOf("\n"))>=0){ const line=buf.slice(0,i).trim(); buf=buf.slice(i+1);
+      if(!line.startsWith("data:")) continue; let ev; try{ ev=JSON.parse(line.slice(5)); }catch(_){ continue; }
+      if(ev.type==="content_block_delta"&&ev.delta&&ev.delta.type==="text_delta"){ text+=ev.delta.text; onText(text); }
+      else if(ev.type==="error") throw {code:"overloaded"}; } }
+  return text;
+}
 
 $("#noAi").onclick=()=>{ $("#tab-style").click(); setTimeout(()=>$("#aiCard").scrollIntoView({behavior:"smooth"}),50); };
-function updateAiBanner(){ $("#noAi").classList.toggle("hidden",!!aiCfg.key); }
+function updateAiBanner(){ $("#noAi").classList.toggle("hidden",ART||!!aiCfg.key); }
 $("#btnSaveKey").onclick=async()=>{
   const btn=$("#btnSaveKey"), st=$("#keyStatus");
   aiCfg={key:$("#aiKey").value.trim(),model:$("#aiModel").value};
@@ -1168,7 +1242,30 @@ $("#importIn").addEventListener("change",async e=>{
 
 /* ---------- 초기화 ---------- */
 renderAll();
+async function initArt(){
+  $("#artNote").classList.remove("hidden");
+  ["#aiCard","#gemCard","#gpsRow"].forEach(q=>{ const e=$(q); if(e) e.classList.add("hidden"); });
+  const bk=$("#btnExport"); if(bk) bk.closest(".card").classList.add("hidden");
+  document.querySelectorAll(".camBtn").forEach(e=>e.classList.add("hidden"));
+  const [dbN,userN,sampleN,assetsN,mcpN]=await Promise.all(["db","user","sample","assets","mcp"].map(n=>window.claude.use(n).catch(()=>null)));
+  artSample=sampleN; artMcp=mcpN; updateAiBanner();
+  let uid=null; if(userN){ try{ uid=await userN.id(); }catch(_){} }
+  if(!dbN||!uid){ $("#noDb").textContent="저장 기능에 연결하지 못했습니다. claude.ai에 로그인한 상태에서 열어 주세요."; $("#noDb").classList.remove("hidden"); return; }
+  const col=dbN.collection("data/users/"+uid);
+  coll={ doc(id){ const r=col.doc(id); return { set:d=>r.set(strip(d)), update:d=>r.update(strip(d)), delete:()=>r.delete() }; } };
+  if(assetsN) assets={ upload:async b=>{ const u=await assetsN.upload(b); return {id:u.id}; }, delete:id=>assetsN.delete(id) };
+  let first=true;
+  col.onSnapshot(snap=>{
+    const cl=[],hi=[]; let st=null;
+    snap.docs.forEach(d=>{ const v=d.data()||{}; if(d.id==="settings") st=v; else if(v.kind==="cloth") cl.push({id:d.id,...v}); else if(v.kind==="history") hi.push({id:d.id,...v}); });
+    clothes=cl.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)); history=hi.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    if(st) settings={...DEFAULTS,...st};
+    renderAll();
+    if(first&&!snap.metadata.fromCache){ first=false; loadWeather(); }
+  },()=>{ $("#noDb").textContent="옷장 데이터를 불러오지 못했습니다. 페이지를 다시 열어 주세요."; $("#noDb").classList.remove("hidden"); });
+}
 (async()=>{
+  if(ART){ await initArt(); return; }
   if(!("indexedDB" in window)){ $("#noDb").classList.remove("hidden"); return; }
   idbP=openIDB();
   try{ await idbP; }catch(_){ $("#noDb").classList.remove("hidden"); return; }
@@ -1178,6 +1275,7 @@ renderAll();
   $("#gemKey").value=gemCfg.key; $("#gemMode").value=gemCfg.mode; showBody();
   try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(_){}
   await reload();
+  loadWeather();
   if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
 })();
