@@ -300,7 +300,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
       </div>
       <input id="bodyCam" type="file" accept="image/*" capture="user" class="hidden">
       <input id="bodyGal" type="file" accept="image/*" class="hidden">
-      <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:14px"><input type="checkbox" id="gemAuto" style="width:auto" checked> 코디 추천 때 자동으로 만들기</label>
+      <label class="f" for="gemMode" style="margin-top:12px">코디 추천 때 자동으로 만들기<select id="gemMode"><option value="first">1순위 코디만 (추천)</option><option value="all">모든 코디</option><option value="off">자동 안 함 (버튼 눌렀을 때만)</option></select></label>
       <div class="actions">
         <button class="btn" id="btnSaveGem" type="button">저장</button>
         <span class="status" id="gemStatus"></span>
@@ -351,7 +351,7 @@ const FIELDS={sGender:"gender",sAge:"age",sFit:"fit",sBody:"body",sColors:"color
 let sample=null, assets=null, imgLimits={maxCount:5};
 let coll=null, clothes=[], history=[], settings={...DEFAULTS};
 let aiCfg={key:"",model:"claude-sonnet-5-5"};
-let gemCfg={key:"",auto:true};
+let gemCfg={key:"",mode:"first"};
 let catFilter="전체", selTpo=new Set(["출근(평상시)"]), styleSel=new Set(), styleDirty=false;
 let lastOutfits=null;
 
@@ -524,7 +524,7 @@ async function handleFiles(files){
     let results=[];
     if(aiCfg.key&&per){
       st.innerHTML=`<span class="spin"></span> AI가 옷을 분류하는 중 ${Math.min(i+chunk.length,prepared.length)}/${prepared.length} (장당 몇 초~수십 초)`;
-      try{ const r=await sample.json(classifyPrompt(chunk.length),{images:chunk.map(p=>p.blob)}); results=Array.isArray(r)?r:[r]; }
+      try{ const r=await sample.json(classifyPrompt(chunk.length),{images:chunk.map(p=>p.blob),model:"claude-haiku-5-5"}); results=Array.isArray(r)?r:[r]; }
       catch(e){ failed+=chunk.length; const m=errCopy(e); if(m) toast(m+" 분류 안 된 옷은 눌러서 직접 고칠 수 있습니다."); }
     }
     for(let j=0;j<chunk.length;j++){
@@ -847,13 +847,13 @@ function gemErr(e){ const c=e&&e.code;
   if(c==="no_items") return "이 코디에는 사진이 있는 옷이 없습니다.";
   if(c==="gem_model") return "Gemini 이미지 모델을 쓸 수 없는 키입니다.";
   return "입은 모습 이미지를 만들지 못했습니다."+(e&&e.message?` (${e.message.slice(0,80)})`:""); }
-function setupTryOn(box,pieces,title){
+function setupTryOn(box,pieces,title,auto){
   const run=()=>{ box.innerHTML=`<div class="lookph"><span class="spin"></span> 입은 모습 만드는 중 (10~40초)</div>`;
     tryQueue=tryQueue.then(async()=>{ try{ const url=await genTryOn(pieces);
         box.innerHTML=`<img class="look" alt="${esc(title)} 입은 모습" src="${url}"><div class="actions" style="margin-top:8px"><button class="btn ghost small" type="button" data-a="save">이미지 저장·공유</button><button class="btn ghost small" type="button" data-a="again">다시 만들기</button></div>`;
         box.querySelector('[data-a="save"]').onclick=()=>shareImage(url,title+" 입은 모습"); box.querySelector('[data-a="again"]').onclick=run;
       }catch(e){ box.innerHTML=`<div class="banner warn" style="font-size:13.5px">${esc(gemErr(e))}</div><div class="actions" style="margin-top:8px"><button class="btn ghost small" type="button">입은 모습 만들기</button></div>`; box.querySelector("button").onclick=e&&e.code==="no_gem"?()=>{ $("#tab-style").click(); setTimeout(()=>$("#gemCard").scrollIntoView({behavior:"smooth"}),50); }:run; } }); };
-  if(gemCfg.key&&gemCfg.auto) run();
+  if(gemCfg.key&&auto) run();
   else { box.innerHTML=`<div class="actions" style="margin:0"><button class="btn small" type="button">입은 모습 보기</button>${gemCfg.key?"":`<span class="status">Gemini 키 필요</span>`}</div>`; box.querySelector("button").onclick=gemCfg.key?run:()=>{ $("#tab-style").click(); setTimeout(()=>$("#gemCard").scrollIntoView({behavior:"smooth"}),50); }; }
 }
 function piecesFrom(ids,add){
@@ -903,7 +903,7 @@ ${wardrobeText()||"(등록된 옷 없음)"}
 - 모든 문장은 존댓말로 짧게.
 
 다음 JSON 객체로만 답하세요:
-{"summary":"오늘 날씨·일정을 고려한 한 줄 요약","outfits":[{"title":"코디 이름(짧게)","concept":"무난|트렌드|편안","itemIds":["id"],"add":[{"slot":"아우터|상의|하의|원피스/셋업|신발|가방|액세서리","name":"아이템 이름","colorHex":"#RRGGBB"}],"why":"이 조합을 고른 이유 1~2문장","tip":"입는 법·소매·레이어드 팁 한 줄"}],"missing":"오늘 같은 날 옷장에 있으면 좋을 아이템 한 줄, 없으면 빈 문자열"}`;
+{"summary":"오늘 날씨·일정을 고려한 한 줄 요약","outfits":[{"title":"코디 이름(짧게)","concept":"무난|트렌드|편안","itemIds":["id"],"add":[{"slot":"아우터|상의|하의|원피스/셋업|신발|가방|액세서리","name":"아이템 이름","colorHex":"#RRGGBB"}],"why":"이 조합을 고른 이유 1~2문장","tip":"입는 법·소매·레이어드 팁 한 줄","lookKeyword":"이 코디와 비슷한 사진을 찾을 검색어(성별 포함, 색+아이템 2~3개+코디, 예: 남자 네이비 코트 베이지 니트 코디)"}],"missing":"오늘 같은 날 옷장에 있으면 좋을 아이템 한 줄, 없으면 빈 문자열"}`;
   setBusy(btn,st,true,"코디를 고르는 중 (보통 10~40초)");
   try{
     const r=await sample.json(buildPrompt(),{cache:false});
@@ -925,9 +925,14 @@ function renderOutfits(r){
     card.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><span class="tagline">${esc(concept)}</span><h3>${esc(title)}</h3></div>`;
     const tryBox=document.createElement("div"); tryBox.style.marginBottom="10px"; card.appendChild(tryBox);
     const box=lookImgEl(); card.appendChild(box);
-    if(pieces.length) setupTryOn(tryBox,pieces,title);
+    if(pieces.length) setupTryOn(tryBox,pieces,title,gemCfg.mode==="all"||(gemCfg.mode==="first"&&idx===0));
     const txt=document.createElement("div"); txt.className="prose"; txt.style.marginTop="10px";
     txt.innerHTML=`<p>${esc(o.why||"")}</p>${o.tip?`<p class="sub">${esc(o.tip)}</p>`:""}`; card.appendChild(txt);
+    const kw=String(o.lookKeyword||[settings.gender==="여성"?"여자":settings.gender==="남성"?"남자":"",...ids.map(id=>{const c=clothes.find(x=>x.id===id);return c?((c.colors||[])[0]||"")+" "+(c.sub||c.category):"";}).slice(0,3),"코디"].filter(Boolean).join(" ")).trim();
+    const prods=ids.map(id=>clothes.find(x=>x.id===id)).filter(c=>c&&c.productUrl);
+    const ref=document.createElement("div"); ref.style.marginTop="10px";
+    ref.innerHTML=`<div class="sub" style="margin-bottom:4px">비슷한 코디 사진 보기 · "${esc(kw)}"</div>${refLinks(kw)}${prods.length?`<div class="sub" style="margin:8px 0 4px">브랜드 모델 착용 사진</div><div class="links">${prods.map(c=>`<a href="${esc(c.productUrl)}" target="_blank" rel="noopener">${esc((c.brand?c.brand+" ":"")+c.name)}</a>`).join("")}</div>`:""}`;
+    card.appendChild(ref);
     const adds=(Array.isArray(o.add)?o.add:[]).filter(a=>a&&a.name);
     if(adds.length){ const ad=document.createElement("div"); ad.style.marginTop="10px";
       ad.innerHTML=`<div class="sub" style="margin-bottom:6px">옷장에 없어서 빠진 아이템</div>`+adds.map(a=>`<div style="margin-bottom:8px"><b style="font-size:14px">${esc(a.name)}</b>${shopLinks(a.name)}</div>`).join("");
@@ -955,6 +960,10 @@ async function wearOutfit(ids,title,btn,st){
 
 /* ---------- 쇼핑 ---------- */
 function guessSlot(t){ t=String(t||""); if(/코트|재킷|자켓|패딩|점퍼|아우터|블루종|가디건|베스트/.test(t)) return "아우터"; if(/바지|팬츠|슬랙스|진|데님|스커트|치마|하의/.test(t)) return "하의"; if(/신발|스니커|로퍼|부츠|구두|운동화/.test(t)) return "신발"; if(/가방|백|토트|크로스/.test(t)) return "가방"; if(/원피스|셋업/.test(t)) return "원피스/셋업"; if(/모자|머플러|목도리|벨트|시계|장갑|캡|비니/.test(t)) return "액세서리"; return "상의"; }
+function refLinks(k){
+  const q=encodeURIComponent(k);
+  return `<div class="links"><a href="https://www.pinterest.co.kr/search/pins/?q=${q}" target="_blank" rel="noopener">핀터레스트</a><a href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener">유튜브</a><a href="https://www.google.com/search?tbm=isch&q=${q}" target="_blank" rel="noopener">구글 이미지</a><a href="https://www.instagram.com/explore/search/keyword/?q=${q}" target="_blank" rel="noopener">인스타그램</a></div>`;
+}
 function shopLinks(k){
   const q=encodeURIComponent(k);
   return `<div class="links"><a href="https://www.musinsa.com/search/goods?keyword=${q}" target="_blank" rel="noopener">무신사</a><a href="https://search.29cm.co.kr/?keyword=${q}" target="_blank" rel="noopener">29CM</a><a href="https://search.shopping.naver.com/search/all?query=${q}" target="_blank" rel="noopener">네이버쇼핑</a></div>`;
@@ -1073,6 +1082,7 @@ async function apiCall(body,beta){
     if(/credit|balance|billing/i.test(m)) throw {code:"credit"};
     if(r.status===429) throw {code:"rate_limited"};
     if(r.status===529||r.status>=500) throw {code:"overloaded"};
+    if((r.status===404||r.status===400)&&/model/i.test(m)) throw {code:"model_unavailable",message:m};
     if(r.status===400&&/tool|web_search|web_fetch|beta/i.test(m)) throw {code:"tool_unsupported",message:m};
     if(/image/i.test(m)) throw {code:"image_rejected"};
     throw {code:"upstream_error",message:m}; }
@@ -1093,7 +1103,7 @@ async function callClaude(prompt,images,maxTokens,opts){
     try{
       const messages=[{role:"user",content}]; let j=null, all=[];
       for(let round=0;round<4;round++){
-        const body={model:aiCfg.model||"claude-sonnet-5-5",max_tokens:maxTokens||4096,messages};
+        const body={model:(opts&&opts.model)||aiCfg.model||"claude-sonnet-5-5",max_tokens:maxTokens||4096,messages};
         if(v.tools) body.tools=v.tools;
         j=await apiCall(body,v.beta);
         all=all.concat(j.content||[]);
@@ -1104,7 +1114,7 @@ async function callClaude(prompt,images,maxTokens,opts){
       const tail=all.slice(lastTool+1).filter(b=>b.type==="text").map(b=>b.text).join("");
       const text=tail.trim()?tail:all.filter(b=>b.type==="text").map(b=>b.text).join("");
       return parseJSON(text);
-    }catch(e){ lastErr=e; if(e&&e.code==="tool_unsupported") continue; throw e; }
+    }catch(e){ lastErr=e; if(e&&e.code==="model_unavailable"&&opts&&opts.model){ return callClaude(prompt,images,maxTokens,{...opts,model:null}); } if(e&&e.code==="tool_unsupported") continue; throw e; }
   }
   throw lastErr||{code:"upstream_error"};
 }
@@ -1129,7 +1139,7 @@ async function setBody(f){ if(!f) return; try{ await idbPut("photos","bodyPhoto"
 $("#bodyCam").addEventListener("change",e=>{ setBody(e.target.files[0]); e.target.value=""; });
 $("#bodyGal").addEventListener("change",e=>{ setBody(e.target.files[0]); e.target.value=""; });
 $("#bodyDel").onclick=async()=>{ try{ await idbDel("photos","bodyPhoto"); }catch(_){} showBody(); $("#gemStatus").textContent="전신 사진을 지웠습니다."; };
-$("#btnSaveGem").onclick=async()=>{ gemCfg={key:$("#gemKey").value.trim(),auto:$("#gemAuto").checked}; try{ await idbPut("kv","gemini",gemCfg); $("#gemStatus").textContent=gemCfg.key?"저장했습니다.":"키를 지웠습니다."; }catch(_){ $("#gemStatus").textContent="저장하지 못했습니다."; } };
+$("#btnSaveGem").onclick=async()=>{ gemCfg={key:$("#gemKey").value.trim(),mode:$("#gemMode").value}; try{ await idbPut("kv","gemini",gemCfg); $("#gemStatus").textContent=gemCfg.key?"저장했습니다.":"키를 지웠습니다."; }catch(_){ $("#gemStatus").textContent="저장하지 못했습니다."; } };
 
 /* ---------- 백업 ---------- */
 $("#btnExport").onclick=async()=>{
@@ -1164,8 +1174,8 @@ renderAll();
   try{ await idbP; }catch(_){ $("#noDb").classList.remove("hidden"); return; }
   try{ const a=await idbGet("kv","ai"); if(a&&a.key) aiCfg={key:a.key,model:a.model||"claude-sonnet-5-5"}; }catch(_){}
   $("#aiKey").value=aiCfg.key; $("#aiModel").value=aiCfg.model; updateAiBanner();
-  try{ const g=await idbGet("kv","gemini"); if(g) gemCfg={key:g.key||"",auto:g.auto!==false}; }catch(_){}
-  $("#gemKey").value=gemCfg.key; $("#gemAuto").checked=gemCfg.auto; showBody();
+  try{ const g=await idbGet("kv","gemini"); if(g) gemCfg={key:g.key||"",mode:g.mode||(g.auto===false?"off":"first")}; }catch(_){}
+  $("#gemKey").value=gemCfg.key; $("#gemMode").value=gemCfg.mode; showBody();
   try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(_){}
   await reload();
   if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
