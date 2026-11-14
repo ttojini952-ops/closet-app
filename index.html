@@ -74,6 +74,15 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .item .nm{font-weight:600;font-size:13px;line-height:1.35}
 .item .tg{font-size:12px;color:var(--muted)}
 .drop{border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;display:block}
+.shots{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.shot{display:flex;flex-direction:column;gap:8px}
+.shotph{aspect-ratio:3/4;border:2px dashed var(--line);border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;font-weight:600;overflow:hidden;background:var(--bg)}
+.shotph img{width:100%;height:100%;object-fit:cover}
+.shotbtns{display:flex;gap:6px}
+.shotbtns .btn{flex:1;justify-content:center;width:auto}
+.info{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13.5px}
+.info dt{color:var(--muted)}
+.info dd{margin:0}
 .drop.over{border-color:var(--accent);background:var(--accent-soft)}
 .counts{display:flex;gap:6px;flex-wrap:wrap}
 .outfit{display:flex;flex-direction:column;gap:12px}
@@ -170,17 +179,35 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
   <!-- 내 옷장 -->
   <section id="view-closet" class="view hidden">
     <div class="card">
-      <h2>옷 사진으로 등록</h2>
-      <div class="row">
-        <label class="drop" for="camIn"><strong style="color:var(--ink);font-size:16px">카메라로 찍기</strong><br><span>옷 한 벌씩, 바닥이나 옷걸이에 펼쳐서</span></label>
-        <label class="drop" id="drop" for="fileIn"><strong style="color:var(--ink);font-size:16px">갤러리에서 선택</strong><br><span>여러 장 한꺼번에 가능</span></label>
+      <h2>옷 등록</h2>
+      <p class="sub" style="margin:0 0 12px">옷 전체와 안쪽 라벨(택)을 찍으면, 라벨의 브랜드·품번으로 상품을 찾아 공식 이미지와 정보로 등록합니다.</p>
+      <div class="shots">
+        <div class="shot" id="shotMain">
+          <div class="shotph" id="prevMain"><span>① 옷 전체</span></div>
+          <div class="shotbtns"><label class="btn small" for="mainCam">촬영</label><label class="btn ghost small" for="mainGal">앨범</label></div>
+        </div>
+        <div class="shot" id="shotLabel">
+          <div class="shotph" id="prevLabel"><span>② 라벨 (선택)</span></div>
+          <div class="shotbtns"><label class="btn small" for="labelCam">촬영</label><label class="btn ghost small" for="labelGal">앨범</label></div>
+        </div>
       </div>
-      <input id="camIn" type="file" accept="image/*" capture="environment" class="hidden">
-      <input id="fileIn" type="file" accept="image/*" multiple class="hidden">
+      <input id="mainCam" type="file" accept="image/*" capture="environment" class="hidden">
+      <input id="mainGal" type="file" accept="image/*" class="hidden">
+      <input id="labelCam" type="file" accept="image/*" capture="environment" class="hidden">
+      <input id="labelGal" type="file" accept="image/*" class="hidden">
       <div class="actions">
-        <span class="status" id="uploadStatus"></span>
-        <button class="btn ghost small" id="btnManual">사진 없이 직접 입력</button>
+        <button class="btn" id="btnRegister" type="button" disabled>상품 찾아서 등록</button>
+        <span class="status" id="regStatus"></span>
       </div>
+      <details style="margin-top:14px">
+        <summary class="sub" style="cursor:pointer">여러 벌 빠르게 등록 (라벨 없이 사진만)</summary>
+        <label class="drop" id="drop" for="fileIn" style="margin-top:10px"><strong style="color:var(--ink)">앨범에서 여러 장 선택</strong><br><span>한 장에 옷 한 벌씩</span></label>
+        <input id="fileIn" type="file" accept="image/*" multiple class="hidden">
+        <div class="actions">
+          <span class="status" id="uploadStatus"></span>
+          <button class="btn ghost small" id="btnManual">사진 없이 직접 입력</button>
+        </div>
+      </details>
     </div>
     <div class="card" style="margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
@@ -336,7 +363,15 @@ function errCopy(e){
 function setBusy(btn,statusEl,on,msg){ btn.disabled=on; statusEl.innerHTML=on?`<span class="spin"></span> ${esc(msg)}`:esc(msg||""); }
 const photoURL=new Map();
 function imgSrc(id){ return (id&&photoURL.get(id))||""; }
-function phHTML(item){ return item&&item.assetId?`<img src="${imgSrc(item.assetId)}" alt="${esc(item.name)}" loading="lazy">`:`<span>사진 없음</span>`; }
+function useOfficial(it){ return !!(it&&it.officialImg&&it.showOfficial!==false&&!badImg.has(it.officialImg)); }
+const badImg=new Set();
+function phHTML(item){
+  if(!item) return `<span>사진 없음</span>`;
+  const own=item.assetId?imgSrc(item.assetId):"";
+  if(useOfficial(item)) return `<img src="${esc(item.officialImg)}" referrerpolicy="no-referrer" alt="${esc(item.name)}" loading="lazy" style="object-fit:contain;background:#fff" data-fallback="${esc(own)}" onerror="badImg.add(this.src);if(this.dataset.fallback){this.style.objectFit='cover';this.src=this.dataset.fallback;this.removeAttribute('data-fallback');}else{this.replaceWith(document.createTextNode('사진 없음'));}">`;
+  return own?`<img src="${own}" alt="${esc(item.name)}" loading="lazy">`:`<span>사진 없음</span>`;
+}
+window.badImg=badImg;
 
 /* ---------- 탭 ---------- */
 document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>{
@@ -368,7 +403,7 @@ function renderCloset(){
   const list=clothes.filter(x=>catFilter==="전체"||x.category===catFilter);
   $("#closetEmpty").classList.toggle("hidden",clothes.length>0);
   list.forEach(it=>{ const b=document.createElement("button"); b.type="button"; b.className="item";
-    b.innerHTML=`<div class="ph">${phHTML(it)}</div><div class="meta"><span class="nm">${esc(it.name)}</span><span class="tg">${esc(it.category)}${it.sub?" · "+esc(it.sub):""} · ${esc((it.seasons||[]).join("/"))}</span><span class="tg">착용 ${it.wearCount||0}회</span></div>`;
+    b.innerHTML=`<div class="ph">${phHTML(it)}</div><div class="meta"><span class="nm">${it.brand?`<span class="tg" style="display:block">${esc(it.brand)}</span>`:""}${esc(it.name)}</span><span class="tg">${esc(it.category)}${it.sub?" · "+esc(it.sub):""} · ${esc((it.seasons||[]).join("/"))}</span><span class="tg">착용 ${it.wearCount||0}회</span></div>`;
     b.onclick=()=>openEdit(it); g.appendChild(b); });
 }
 function renderHistory(){
@@ -411,6 +446,8 @@ function updateOnboard(){
 /* ---------- 옷 데이터 정리 ---------- */
 function newId(p){ return p+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7); }
 function clamp(n,a,b,d){ n=Number(n); return Number.isFinite(n)?Math.min(b,Math.max(a,Math.round(n))):d; }
+const PRODUCT_KEYS=["brand","productName","productCode","size","composition","care","price","productUrl","officialImg","labelAssetId","showOfficial"];
+function productFields(r){ const o={}; PRODUCT_KEYS.forEach(k=>{ if(r&&r[k]!==undefined&&r[k]!==null&&r[k]!=="") o[k]=k==="showOfficial"?!!r[k]:String(r[k]).slice(0,400); }); if(o.productUrl&&!/^https?:\/\//.test(o.productUrl)) delete o.productUrl; if(o.officialImg&&!/^https:\/\//.test(o.officialImg)) delete o.officialImg; return o; }
 function normalize(r){
   r=r||{};
   const arr=v=>Array.isArray(v)?v.map(String).filter(Boolean).slice(0,4):(v?[String(v)]:[]);
@@ -420,7 +457,7 @@ function normalize(r){
     styles:arr(r.styles), memo:String(r.memo||"").slice(0,120) };
 }
 function wardrobeText(){
-  return clothes.map(c=>`${c.id} | ${c.name} | ${c.category}/${c.sub||"-"} | 색:${(c.colors||[]).join(",")||"-"} | 패턴:${c.pattern||"-"} | 소재:${c.material||"-"} | 계절:${(c.seasons||[]).join(",")||"-"} | 보온${c.warmth}/5 | 격식${c.formality}/5 | 스타일:${(c.styles||[]).join(",")||"-"} | 착용${c.wearCount||0}회${c.lastWorn?", 최근 "+c.lastWorn:""}${c.memo?" | 메모:"+c.memo:""}`).join("\n");
+  return clothes.map(c=>`${c.id} | ${c.brand?c.brand+" ":""}${c.name} | ${c.category}/${c.sub||"-"} | 색:${(c.colors||[]).join(",")||"-"} | 패턴:${c.pattern||"-"} | 소재:${c.material||"-"} | 계절:${(c.seasons||[]).join(",")||"-"} | 보온${c.warmth}/5 | 격식${c.formality}/5 | 스타일:${(c.styles||[]).join(",")||"-"} | 착용${c.wearCount||0}회${c.lastWorn?", 최근 "+c.lastWorn:""}${c.memo?" | 메모:"+c.memo:""}`).join("\n");
 }
 function profileText(){
   const s=settings;
@@ -484,10 +521,60 @@ $("#fileIn").addEventListener("change",e=>{ handleFiles(e.target.files); e.targe
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
 drop.addEventListener("drop",e=>{ if(e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files); });
 $("#btnManual").onclick=()=>openEdit(null);
-$("#camIn").addEventListener("change",e=>{ handleFiles(e.target.files); e.target.value=""; });
 
 
 /* ---------- 옷 편집 창 ---------- */
+/* ---------- 라벨로 상품 찾아 등록 ---------- */
+let shotMain=null, shotLabel=null;
+function setShot(which,file){
+  if(!file) return;
+  const url=URL.createObjectURL(file);
+  if(which==="main"){ shotMain=file; $("#prevMain").innerHTML=`<img src="${url}" alt="옷 전체">`; }
+  else { shotLabel=file; $("#prevLabel").innerHTML=`<img src="${url}" alt="라벨">`; }
+  $("#btnRegister").disabled=!shotMain;
+  $("#btnRegister").textContent=shotLabel?"상품 찾아서 등록":"사진으로 등록";
+}
+[["mainCam","main"],["mainGal","main"],["labelCam","label"],["labelGal","label"]].forEach(([id,w])=>$("#"+id).addEventListener("change",e=>{ setShot(w,e.target.files[0]); e.target.value=""; }));
+function productPrompt(hasLabel){
+  return `첫 번째 사진은 사용자가 가진 옷 전체 사진${hasLabel?", 두 번째 사진은 그 옷의 라벨(택)":""}입니다.
+${hasLabel?`1) 라벨에서 브랜드, 품번(스타일 번호), 사이즈, 혼용률(소재 구성), 세탁 표시, 원산지를 읽으세요.
+2) 웹 검색으로 이 브랜드의 공식몰·무신사·29CM 등에서 같은 상품(품번 일치 우선, 없으면 브랜드+옷 모양·색이 같은 상품)을 찾으세요.
+3) 찾은 상품 페이지에서 정식 상품명, 정가, 상품 이미지 URL을 확인하세요.`:`사진만 보고 옷 정보를 정리하세요. 브랜드 로고가 보이면 웹 검색으로 같은 상품을 찾아 보세요.`}
+규칙:
+- officialImg에는 검색·페이지에서 실제로 확인한 상품 이미지 파일 주소(https로 시작, .jpg/.png/.webp 등)만 넣으세요. 확인하지 못했으면 빈 문자열. 주소를 지어내지 마세요.
+- productUrl도 실제로 확인한 상품 페이지 주소만. 확신이 없는 값은 빈 문자열.
+- matched는 같은 상품을 찾았는지: "exact"(품번 일치) | "similar"(비슷한 상품) | "none".
+다음 JSON 객체 하나로만 답하세요:
+{"matched":"exact|similar|none","brand":"브랜드","productName":"정식 상품명","productCode":"품번","size":"라벨 사이즈","composition":"혼용률 예: 울 70%, 나일론 30%","care":"세탁 방법 요약","price":"정가(원)","productUrl":"","officialImg":"","name":"짧은 표시 이름(예: 네이비 울 싱글 코트)","category":"${CATS.join("|")} 중 하나","sub":"세부 종류","colors":["주된 색","보조 색"],"pattern":"무지|스트라이프|체크|프린트|기타","material":"주 소재","seasons":["봄","여름","가을","겨울" 중 해당],"warmth":1~5,"formality":1~5,"styles":["${STYLES.join('","')}" 중 1~3개],"memo":"코디 팁 한 줄"}`;
+}
+function checkImg(url){ return new Promise(res=>{ if(!url) return res(false); const im=new Image(); im.referrerPolicy="no-referrer"; const t=setTimeout(()=>res(false),8000); im.onload=()=>{clearTimeout(t);res(im.naturalWidth>50);}; im.onerror=()=>{clearTimeout(t);res(false);}; im.src=url; }); }
+$("#btnRegister").onclick=async()=>{
+  const btn=$("#btnRegister"), st=$("#regStatus");
+  if(!shotMain) return;
+  if(!coll){ st.textContent="폰 저장소를 쓸 수 없습니다."; return; }
+  try{
+    setBusy(btn,st,true,"사진 저장 중");
+    const mainBlob=await shrink(shotMain,1000), labelBlob=shotLabel?await shrink(shotLabel,1400):null;
+    const up=await assets.upload(mainBlob), upL=labelBlob?await assets.upload(labelBlob):null;
+    let r={};
+    if(aiCfg.key){
+      setBusy(btn,st,true,shotLabel?"라벨을 읽고 상품을 찾는 중 (30초~1분)":"옷을 분석하는 중");
+      try{ r=await callClaude(productPrompt(!!labelBlob),labelBlob?[mainBlob,labelBlob]:[mainBlob],4096,{search:true}); }
+      catch(e){ toast(errCopy(e)+" 사진만으로 저장합니다."); }
+    }
+    let official=r&&r.officialImg&&/^https:\/\//.test(r.officialImg)?r.officialImg:"";
+    if(official){ setBusy(btn,st,true,"상품 이미지 확인 중"); if(!(await checkImg(official))) official=""; }
+    const data={kind:"cloth",...normalize(r),...productFields({...r,officialImg:official}),assetId:up.id,labelAssetId:upL?upL.id:undefined,showOfficial:!!official,createdAt:Date.now(),wearCount:0,lastWorn:null};
+    if(!data.labelAssetId) delete data.labelAssetId;
+    const id=newId("c");
+    await coll.doc(id).set(data);
+    const msg=official?"공식 이미지를 찾아 등록했습니다.":(r&&r.matched&&r.matched!=="none"?"상품 정보는 찾았지만 공식 이미지는 못 찾아 내 사진으로 등록했습니다.":"내 사진으로 등록했습니다.");
+    setBusy(btn,st,false,msg+" 내용을 확인해 주세요.");
+    shotMain=null; shotLabel=null; $("#prevMain").innerHTML="<span>① 옷 전체</span>"; $("#prevLabel").innerHTML="<span>② 라벨 (선택)</span>"; btn.disabled=true;
+    const saved=clothes.find(c=>c.id===id); if(saved) openEdit(saved);
+  }catch(e){ setBusy(btn,st,false,"등록하지 못했습니다. 다시 시도해 주세요."); btn.disabled=!shotMain; }
+};
+
 function openEdit(item){
   const isNew=!item; const it=item?{...item}:{...normalize({}),name:"",category:"상의"};
   const root=$("#modalRoot");
@@ -513,6 +600,24 @@ function openEdit(item){
       <label class="f" for="eWear">착용 횟수<input id="eWear" type="number" min="0" value="${it.wearCount||0}"></label>
     </div>
     <label class="f" for="eMemo">메모<input id="eMemo" value="${esc(it.memo)}"></label>
+    <details ${it.brand||it.productName?"open":""}><summary class="sub" style="cursor:pointer;margin-bottom:8px">상품 정보</summary>
+      <div class="row">
+        <label class="f" for="eBrand">브랜드<input id="eBrand" value="${esc(it.brand)}"></label>
+        <label class="f" for="eCode">품번<input id="eCode" value="${esc(it.productCode)}"></label>
+        <label class="f" for="eSize">사이즈<input id="eSize" value="${esc(it.size)}"></label>
+      </div>
+      <label class="f" for="ePName" style="margin-top:8px">정식 상품명<input id="ePName" value="${esc(it.productName)}"></label>
+      <div class="row" style="margin-top:8px">
+        <label class="f" for="eComp">혼용률<input id="eComp" value="${esc(it.composition)}"></label>
+        <label class="f" for="ePrice">정가<input id="ePrice" value="${esc(it.price)}"></label>
+      </div>
+      <label class="f" for="eCare" style="margin-top:8px">세탁 방법<input id="eCare" value="${esc(it.care)}"></label>
+      <label class="f" for="eUrl" style="margin-top:8px">상품 페이지 주소<input id="eUrl" value="${esc(it.productUrl)}" inputmode="url"></label>
+      <label class="f" for="eImg" style="margin-top:8px">공식 이미지 주소<input id="eImg" value="${esc(it.officialImg)}" inputmode="url"></label>
+      ${it.productUrl?`<div class="links" style="margin-top:6px"><a href="${esc(it.productUrl)}" target="_blank" rel="noopener">상품 페이지 열기</a></div>`:""}
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:14px"><input type="checkbox" id="eShowOff" style="width:auto" ${it.showOfficial!==false&&it.officialImg?"checked":""}> 목록·코디에 공식 이미지로 표시</label>
+      ${it.assetId||it.labelAssetId?`<div style="display:flex;gap:8px;margin-top:10px">${it.assetId?`<img src="${imgSrc(it.assetId)}" alt="내 사진" style="width:84px;height:110px;object-fit:cover;border-radius:8px">`:""}${it.labelAssetId?`<img src="${imgSrc(it.labelAssetId)}" alt="라벨 사진" style="width:84px;height:110px;object-fit:cover;border-radius:8px">`:""}</div>`:""}
+    </details>
     <div class="actions" style="justify-content:space-between">
       <div class="actions" style="margin:0"><button class="btn" id="eSave">저장</button><button class="btn ghost" id="eClose">닫기</button></div>
       ${isNew?"":`<button class="btn danger small" id="eDel">이 옷 삭제</button>`}
@@ -530,6 +635,8 @@ function openEdit(item){
   $("#eSave").onclick=async()=>{
     if(!coll){ $("#eStatus").textContent="저장 기능이 연결되지 않았습니다."; return; }
     const data={kind:"cloth",...normalize({name:$("#eName").value.trim()||"이름 없는 옷",category:$("#eCat").value,sub:$("#eSub").value.trim(),colors:$("#eColors").value.split(",").map(s=>s.trim()).filter(Boolean),pattern:$("#ePattern").value.trim(),material:$("#eMat").value.trim(),seasons:[...ss],warmth:$("#eWarm").value,formality:$("#eForm").value,styles:[...sy],memo:$("#eMemo").value.trim()}),
+      ...productFields({brand:$("#eBrand").value.trim(),productCode:$("#eCode").value.trim(),size:$("#eSize").value.trim(),productName:$("#ePName").value.trim(),composition:$("#eComp").value.trim(),price:$("#ePrice").value.trim(),care:$("#eCare").value.trim(),productUrl:$("#eUrl").value.trim(),officialImg:$("#eImg").value.trim(),labelAssetId:it.labelAssetId}),
+      showOfficial:$("#eShowOff").checked,
       assetId:it.assetId||null, createdAt:it.createdAt||Date.now(), wearCount:clamp($("#eWear").value,0,9999,0), lastWorn:it.lastWorn||null};
     $("#eSave").disabled=true; $("#eStatus").textContent="저장 중…";
     try{ await coll.doc(isNew?newId("c"):it.id).set(data); close(); toast("저장했습니다."); }
@@ -539,7 +646,7 @@ function openEdit(item){
     let armed=false;
     $("#eDel").onclick=async()=>{
       if(!armed){ armed=true; $("#eDel").textContent="한 번 더 누르면 삭제"; return; }
-      try{ await coll.doc(it.id).delete(); if(it.assetId&&assets){ try{ await assets.delete(it.assetId);}catch(_){} } close(); toast("삭제했습니다."); }
+      try{ await coll.doc(it.id).delete(); if(assets){ for(const a of [it.assetId,it.labelAssetId]) if(a){ try{ await assets.delete(a);}catch(_){} } } close(); toast("삭제했습니다."); }
       catch(e){ $("#eStatus").textContent="삭제하지 못했습니다."; }
     };
   }
@@ -606,7 +713,8 @@ function drawSilhouette(ctx,slot,x,y,w,h,hex){
   else { ctx.beginPath(); ctx.arc(0,0,26,0,7); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(0,0,18,0,7); ctx.stroke(); }
   ctx.restore();
 }
-function loadImg(src){ return new Promise(res=>{ if(!src) return res(null); const im=new Image(); im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; }); }
+function loadImg(src,cors){ return new Promise(res=>{ if(!src) return res(null); const im=new Image(); if(cors){ im.crossOrigin="anonymous"; im.referrerPolicy="no-referrer"; } const t=setTimeout(()=>res(null),8000); im.onload=()=>{clearTimeout(t);res(im);}; im.onerror=()=>{clearTimeout(t);res(null);}; im.src=src; }); }
+async function loadPieceImg(p){ if(p.official){ const im=await loadImg(p.official,true); if(im) return {im,contain:true}; } const im=await loadImg(p.img); return im?{im,contain:false}:null; }
 function wrapText(ctx,text,maxW){ const out=[]; let line=""; for(const ch of String(text)){ if(ctx.measureText(line+ch).width>maxW&&line){ out.push(line); line=ch; } else line+=ch; } if(line) out.push(line); return out; }
 async function drawLook(pieces,title,sub){
   try{ await document.fonts.ready; }catch(_){}
@@ -617,11 +725,11 @@ async function drawLook(pieces,title,sub){
   ctx.fillStyle="#667085"; ctx.font=`500 28px ${F}`; ctx.fillText(wrapText(ctx,sub,W-80)[0]||"",40,134);
   const pos=[[40,170,490,560],[550,170,490,560],[40,750,490,560],[550,750,490,270],[550,1040,490,270]];
   const list=pieces.slice().sort((a,b)=>SLOT_ORDER.indexOf(a.slot)-SLOT_ORDER.indexOf(b.slot)).slice(0,5);
-  const imgs=await Promise.all(list.map(p=>loadImg(p.img)));
+  const imgs=await Promise.all(list.map(loadPieceImg));
   list.forEach((p,i)=>{
     const [x,y,w,h]=pos[i]; ctx.save(); ctx.shadowColor="rgba(20,30,60,.10)"; ctx.shadowBlur=18; ctx.shadowOffsetY=6;
     ctx.fillStyle="#ffffff"; rrect(ctx,x,y,w,h,26); ctx.fill(); ctx.restore();
-    const lh=56, ix=x+20, iy=y+20, iw=w-40, ih=h-40-lh; const im=imgs[i];
+    const lh=56, ix=x+20, iy=y+20, iw=w-40, ih=h-40-lh; const im=imgs[i]&&imgs[i].im;
     if(im){ const r=Math.min(iw/im.width,ih/im.height); const dw=im.width*r, dh=im.height*r; ctx.save(); rrect(ctx,ix,iy,iw,ih,16); ctx.clip(); ctx.drawImage(im,ix+(iw-dw)/2,iy+(ih-dh)/2,dw,dh); ctx.restore(); }
     else { ctx.fillStyle="#eef0f4"; rrect(ctx,ix,iy,iw,ih,16); ctx.fill(); ctx.fillStyle="#98a0ae"; ctx.font=`600 24px ${F}`; ctx.fillText("사진 없음",ix+iw/2-50,iy+ih/2); }
     ctx.fillStyle="#1b2130"; ctx.font=`700 26px ${F}`; const nm=wrapText(ctx,p.name||p.slot,w-40)[0]||""; ctx.fillText(nm,x+20,y+h-24);
@@ -644,7 +752,7 @@ async function shareImage(dataUrl,title){
   }catch(e){ if(e&&e.name!=="AbortError") toast("이미지를 저장하지 못했습니다. 이미지를 길게 눌러 저장해 주세요."); }
 }
 function piecesFrom(ids,add){
-  const out=(ids||[]).map(id=>clothes.find(c=>c.id===id)).filter(Boolean).map(c=>({slot:slotOf(c.category),name:c.name,img:c.assetId?imgSrc(c.assetId):null,hex:colorHex((c.colors||[])[0])}));
+  const out=(ids||[]).map(id=>clothes.find(c=>c.id===id)).filter(Boolean).map(c=>({slot:slotOf(c.category),name:c.name,official:useOfficial(c)?c.officialImg:null,img:c.assetId?imgSrc(c.assetId):null,hex:colorHex((c.colors||[])[0])}));
   return out;
 }
 
@@ -848,27 +956,52 @@ function parseJSON(t){
   if(a<Infinity&&b>a){ try{ return JSON.parse(t.slice(a,b+1)); }catch(_){} }
   throw {code:"invalid_json"};
 }
-async function callClaude(prompt,images,maxTokens){
-  if(!aiCfg.key) throw {code:"no_key"};
-  const content=[];
-  for(const im of images||[]) content.push({type:"image",source:{type:"base64",media_type:im.type&&/^image\/(jpeg|png|webp|gif)$/.test(im.type)?im.type:"image/jpeg",data:await blobToB64(im)}});
-  content.push({type:"text",text:prompt+"\n\n다른 설명 없이 JSON만 출력하세요."});
-  let r;
-  try{ r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":aiCfg.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:aiCfg.model||"claude-sonnet-5-5",max_tokens:maxTokens||4096,messages:[{role:"user",content}]})}); }
-  catch(_){ throw {code:"network"}; }
+async function apiCall(body,beta){
+  const headers={"content-type":"application/json","x-api-key":aiCfg.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"};
+  if(beta) headers["anthropic-beta"]=beta;
+  let r; try{ r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers,body:JSON.stringify(body)}); }catch(_){ throw {code:"network"}; }
   let j=null; try{ j=await r.json(); }catch(_){}
-  if(!r.ok){ const m=(j&&j.error&&j.error.message)||""; 
+  if(!r.ok){ const m=(j&&j.error&&j.error.message)||"";
     if(r.status===401||r.status===403) throw {code:"auth"};
     if(/credit|balance|billing/i.test(m)) throw {code:"credit"};
     if(r.status===429) throw {code:"rate_limited"};
     if(r.status===529||r.status>=500) throw {code:"overloaded"};
+    if(r.status===400&&/tool|web_search|web_fetch|beta/i.test(m)) throw {code:"tool_unsupported",message:m};
     if(/image/i.test(m)) throw {code:"image_rejected"};
     throw {code:"upstream_error",message:m}; }
-  const text=(j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-  return parseJSON(text);
+  return j;
 }
-sample={ json:(prompt,opts)=>callClaude(prompt,opts&&opts.images,opts&&opts.maxTokens) };
+async function callClaude(prompt,images,maxTokens,opts){
+  if(!aiCfg.key) throw {code:"no_key"};
+  const content=[];
+  for(const im of images||[]) content.push({type:"image",source:{type:"base64",media_type:im.type&&/^image\/(jpeg|png|webp|gif)$/.test(im.type)?im.type:"image/jpeg",data:await blobToB64(im)}});
+  content.push({type:"text",text:prompt+"\n\n마지막 답변은 다른 설명 없이 JSON만 출력하세요."});
+  const search=opts&&opts.search;
+  const variants=search?[
+    {tools:[{type:"web_search_20250305",name:"web_search",max_uses:5,user_location:{type:"approximate",country:"KR",timezone:"Asia/Seoul"}},{type:"web_fetch_20250910",name:"web_fetch",max_uses:3}],beta:"web-fetch-2025-09-10"},
+    {tools:[{type:"web_search_20250305",name:"web_search",max_uses:5,user_location:{type:"approximate",country:"KR",timezone:"Asia/Seoul"}}]},
+    {}]:[{}];
+  let lastErr=null;
+  for(const v of variants){
+    try{
+      const messages=[{role:"user",content}]; let j=null, all=[];
+      for(let round=0;round<4;round++){
+        const body={model:aiCfg.model||"claude-sonnet-5-5",max_tokens:maxTokens||4096,messages};
+        if(v.tools) body.tools=v.tools;
+        j=await apiCall(body,v.beta);
+        all=all.concat(j.content||[]);
+        if(j.stop_reason==="pause_turn"){ messages.push({role:"assistant",content:j.content}); continue; }
+        break;
+      }
+      let lastTool=-1; all.forEach((b,i)=>{ if(/tool_result|tool_use/.test(b.type)) lastTool=i; });
+      const tail=all.slice(lastTool+1).filter(b=>b.type==="text").map(b=>b.text).join("");
+      const text=tail.trim()?tail:all.filter(b=>b.type==="text").map(b=>b.text).join("");
+      return parseJSON(text);
+    }catch(e){ lastErr=e; if(e&&e.code==="tool_unsupported") continue; throw e; }
+  }
+  throw lastErr||{code:"upstream_error"};
+}
+sample={ json:(prompt,opts)=>callClaude(prompt,opts&&opts.images,opts&&opts.maxTokens,opts) };
 
 $("#noAi").onclick=()=>{ $("#tab-style").click(); setTimeout(()=>$("#aiCard").scrollIntoView({behavior:"smooth"}),50); };
 function updateAiBanner(){ $("#noAi").classList.toggle("hidden",!!aiCfg.key); }
